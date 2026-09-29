@@ -69,6 +69,9 @@ class Settings(BaseSettings):
 
     # Redis & Celery
     REDIS_URL: str = "redis://localhost:6379/0"
+    INVESTIGATION_SOFT_TIME_LIMIT_SECONDS: int = 600  # worker raises SoftTimeLimitExceeded → run marked failed
+    INVESTIGATION_TIME_LIMIT_SECONDS: int = 660  # hard kill; must exceed the soft limit
+    TASK_ENQUEUE_MAX_RETRIES: int = 2  # broker publish retries before /investigate returns 503
 
     # Observability
     OTEL_EXPORTER_ENDPOINT: str | None = None

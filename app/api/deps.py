@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
 from app.security.auth import decode_access_token
-from app.security.rbac import PERMISSIONS
+from app.security.rbac import PERMISSIONS, Role
 
 # Security scheme for JWT Bearer
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -70,3 +70,18 @@ def require_permission(permission: str) -> Callable:
         return current_user
 
     return permission_checker
+
+
+def require_role(*roles: Role) -> Callable:
+    """Dependency factory restricting an endpoint to specific roles (e.g. [admin] routes in §8)."""
+    def role_checker(
+        current_user: Annotated[User, Depends(get_current_user)]
+    ) -> User:
+        if current_user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires role: {', '.join(r.value for r in roles)}",
+            )
+        return current_user
+
+    return role_checker

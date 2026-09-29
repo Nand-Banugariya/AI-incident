@@ -2,6 +2,11 @@
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.incident import Incident, IncidentState
+from app.models.investigation import (
+    IncidentStateTransition,
+    InvestigationRun,
+    InvestigationRunStatus,
+)
 from app.models.organization import Organization
 from app.models.user import User
 
@@ -13,4 +18,7 @@ __all__ = [
     "User",
     "Incident",
     "IncidentState",
+    "InvestigationRun",
+    "InvestigationRunStatus",
+    "IncidentStateTransition",
 ]
