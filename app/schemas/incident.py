@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.incident import IncidentState
+from app.models.incident import IncidentState, RiskLevel
 
 
 class IncidentBase(BaseModel):
@@ -35,6 +35,7 @@ class IncidentRead(IncidentBase):
     id: uuid.UUID
     org_id: uuid.UUID
     state: IncidentState
+    risk_level: RiskLevel | None
     langgraph_thread_id: str
     created_by: uuid.UUID
     total_llm_cost_usd: Decimal

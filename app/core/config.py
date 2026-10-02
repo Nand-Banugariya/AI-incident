@@ -1,9 +1,14 @@
 """Core Configuration loaded from environment variables using Pydantic Settings."""
 
 import json
-from typing import Annotated, Any
-from pydantic import Field, SecretStr, field_validator
+import secrets
+import warnings
+from typing import Annotated, Any, Literal
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -12,6 +17,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    # Deployment environment — anything other than "development" enforces strict secret validation
+    APP_ENV: Literal["development", "staging", "production"] = "development"
 
     # Platform's own DB (read/write) — incidents, evidence, approvals, users
     APP_DB_URL: str = "postgresql+asyncpg://app_user:changeme@localhost:5432/incident_ai"
@@ -63,7 +71,7 @@ class Settings(BaseSettings):
     # Auth & RBAC
     OIDC_ISSUER: str = "https://login.microsoftonline.com/common/v2.0"
     OIDC_CLIENT_ID: str = "client-id-placeholder"
-    JWT_SECRET: SecretStr = SecretStr("default_insecure_jwt_secret_change_in_production")
+    JWT_SECRET: SecretStr | None = None  # required outside development; see _validate_jwt_secret
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
@@ -76,6 +84,27 @@ class Settings(BaseSettings):
     # Observability
     OTEL_EXPORTER_ENDPOINT: str | None = None
     LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: Literal["json", "console"] = "json"
+
+    @model_validator(mode="after")
+    def _validate_jwt_secret(self) -> "Settings":
+        """Fail fast on a missing/weak JWT secret outside development (dev gets an ephemeral one)."""
+        secret = self.JWT_SECRET.get_secret_value() if self.JWT_SECRET else ""
+        weak = len(secret) < MIN_JWT_SECRET_LENGTH or secret.lower().startswith(("changeme", "default"))
+        if not weak:
+            return self
+        if self.APP_ENV != "development":
+            raise ValueError(
+                f"JWT_SECRET must be set to a random value of at least {MIN_JWT_SECRET_LENGTH} characters "
+                f"when APP_ENV='{self.APP_ENV}'"
+            )
+        warnings.warn(
+            "JWT_SECRET is not set (or too weak); using an ephemeral secret for this process. "
+            "Issued tokens will be invalid after a restart.",
+            stacklevel=2,
+        )
+        self.JWT_SECRET = SecretStr(secrets.token_urlsafe(48))
+        return self
 
 
 settings = Settings()

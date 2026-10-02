@@ -17,3 +17,4 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Relationships
     users = relationship("User", back_populates="organization", cascade="all, delete-orphan")
     incidents = relationship("Incident", back_populates="organization", cascade="all, delete-orphan")
+    data_sources = relationship("DataSource", back_populates="organization", cascade="all, delete-orphan")

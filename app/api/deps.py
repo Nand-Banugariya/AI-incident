@@ -1,5 +1,6 @@
 """FastAPI Dependency Injection providers: DB sessions, user resolution, and security gates."""
 
+import logging
 import uuid
 from typing import Annotated, Callable
 import jwt
@@ -9,9 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.models.approval import Approval, ApprovalStage, ApprovalStatus
+from app.models.incident import Incident
 from app.models.user import User
 from app.security.auth import decode_access_token
 from app.security.rbac import PERMISSIONS, Role
+
+logger = logging.getLogger(__name__)
 
 # Security scheme for JWT Bearer
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -69,6 +74,7 @@ def require_permission(permission: str) -> Callable:
             )
         return current_user
 
+    permission_checker.required_permission = permission  # lets tests assert which permission a route enforces
     return permission_checker
 
 
@@ -85,3 +91,46 @@ def require_role(*roles: Role) -> Callable:
         return current_user
 
     return role_checker
+
+
+def require_approval(stage: ApprovalStage) -> Callable:
+    """Second, independent enforcement point for every write-triggering endpoint (§4, §8).
+
+    Passes only if the NEWEST approval row for this incident+stage is APPROVED. Newest-wins means a later
+    rejection or a freshly opened (pending) request revokes an earlier approval: the check fails closed.
+    Re-checks the caller's org itself rather than trusting that another dependency did, so it is safe
+    to use on its own. Pair it with `require_permission(...)` — it does not check roles.
+    """
+    def approval_checker(
+        incident_id: uuid.UUID,
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[Session, Depends(get_db)],
+    ) -> Approval:
+        in_scope = db.scalar(
+            select(Incident.id).where(Incident.id == incident_id, Incident.org_id == current_user.org_id)
+        )
+        if in_scope is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Incident with ID '{incident_id}' not found",
+            )
+
+        approval = db.scalar(
+            select(Approval)
+            .where(Approval.incident_id == incident_id, Approval.stage == stage)
+            .order_by(Approval.created_at.desc())
+            .limit(1)
+        )
+        if approval is None or approval.status != ApprovalStatus.APPROVED:
+            logger.warning(
+                "Approval gate denied: incident=%s stage=%s latest_status=%s user=%s",
+                incident_id, stage.value, approval.status.value if approval else "none", current_user.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No approved {stage.value} approval for this incident",
+            )
+        return approval
+
+    approval_checker.required_stage = stage  # lets tests assert which gate a route sits behind
+    return approval_checker

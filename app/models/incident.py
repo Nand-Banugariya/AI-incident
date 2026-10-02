@@ -33,6 +33,13 @@ class IncidentState(str, enum.Enum):
     NEEDS_MORE_INVESTIGATION = "needs_more_investigation"
 
 
+class RiskLevel(str, enum.Enum):
+    """Risk assessment of the proposed change; produced with the implementation plan (matches its risk_level)."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class Incident(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "incidents"
 
@@ -65,6 +72,8 @@ class Incident(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    # Set by the implementation planner; NULL until a plan exists. Drives segregation of duties (§4).
+    risk_level: Mapped[RiskLevel | None] = mapped_column(Enum(RiskLevel), nullable=True)
     total_llm_cost_usd: Mapped[Decimal] = mapped_column(
         Numeric(10, 4),
         nullable=False,

@@ -5,6 +5,8 @@ import logging
 import uuid
 from typing import Callable
 
+import structlog
+
 from app.agents.state import InvestigationState
 from app.core.database import SessionLocal
 from app.models.incident import IncidentState
@@ -30,6 +32,9 @@ def investigation_node(name: str, incident_state: IncidentState) -> Callable[[No
         @functools.wraps(fn)
         def wrapper(state: InvestigationState) -> dict:
             run_id = uuid.UUID(state["run_id"])
+            structlog.contextvars.bind_contextvars(
+                incident_id=state["incident_id"], run_id=state["run_id"], node_name=name
+            )
             with SessionLocal() as db:
                 InvestigationService.enter_node(db, run_id, name, incident_state)
             logger.info("Run %s entering node '%s' (incident %s)", run_id, name, state["incident_id"])
@@ -39,5 +44,7 @@ def investigation_node(name: str, incident_state: IncidentState) -> Callable[[No
                 raise
             except Exception as exc:
                 raise NodeExecutionError(name, exc) from exc
+            finally:
+                structlog.contextvars.clear_contextvars()
         return wrapper
     return decorator

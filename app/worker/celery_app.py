@@ -7,6 +7,9 @@ Run a worker locally (Windows needs the solo pool):
 from celery import Celery
 
 from app.core.config import settings
+from app.core.logging import configure_logging
+
+configure_logging()
 
 INVESTIGATION_TASK_NAME = "investigations.run"
 INVESTIGATION_QUEUE = "investigations"
@@ -33,6 +36,7 @@ celery_app.conf.update(
     broker_transport_options={"visibility_timeout": settings.INVESTIGATION_TIME_LIMIT_SECONDS + 300},
     broker_connection_timeout=3,
     broker_connection_retry_on_startup=True,
+    worker_hijack_root_logger=False,  # keep the structlog JSON handler installed above
     timezone="UTC",
     enable_utc=True,
 )

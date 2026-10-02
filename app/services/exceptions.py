@@ -15,3 +15,11 @@ class ConflictError(ServiceError):
 
 class ServiceUnavailableError(ServiceError):
     """A required dependency (e.g. the task queue) is unreachable."""
+
+
+class NotSupportedError(ServiceError):
+    """The operation is valid but not available yet (e.g. no connection probe for a provider type)."""
+
+
+class ForbiddenError(ServiceError):
+    """The caller is authenticated and has the permission, but a business rule forbids this action."""

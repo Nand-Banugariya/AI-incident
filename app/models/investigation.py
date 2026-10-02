@@ -2,7 +2,7 @@
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -64,6 +64,10 @@ class InvestigationRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class IncidentStateTransition(Base, UUIDPrimaryKeyMixin):
     """Append-only audit log of every incident state change."""
 
@@ -88,8 +92,11 @@ class IncidentStateTransition(Base, UUIDPrimaryKeyMixin):
         nullable=True,
     )  # NULL = system (investigation worker)
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Set in Python as well as by the DB: now() is second-resolution on SQLite and frozen at transaction start on
+    # PostgreSQL, so transitions recorded together would tie and the audit timeline order would be arbitrary.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=_utcnow,
         server_default=func.now(),
         nullable=False,
         index=True,

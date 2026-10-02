@@ -9,17 +9,18 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import engine
+from app.core.logging import configure_logging
 import app.models  # Ensure all models are registered with Base.metadata
 
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application startup and shutdown events."""
-    # Startup actions: automatically initialize tables if not existing
-    Base.metadata.create_all(bind=engine)
+    # Schema is managed by Alembic (`alembic upgrade head`), not created at startup
     yield
     # Shutdown actions: gracefully close database connections
     engine.dispose()
