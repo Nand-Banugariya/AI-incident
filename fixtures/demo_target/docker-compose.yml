@@ -1,0 +1,90 @@
+# Demo target: a small, deliberately faulty service for the platform to investigate (step D0b).
+#
+#   docker compose up -d --build        # first start seeds ~2M orders; wait until "demo-api" is healthy
+#   python load.py                      # triggers both faults and writes runs/<run_id>/manifest.json
+#
+# Log files land in ./logs on the host. The Linux Logs and Database MCP servers mount them read-only.
+
+name: demo-target
+
+services:
+  # Bind-mounted log dirs are root-owned on Linux; open them up before postgres (uid 999) writes into them
+  logs-init:
+    image: busybox:1.36
+    command: sh -c "mkdir -p /logs/postgres /logs/app && chmod 0777 /logs/postgres /logs/app"
+    volumes:
+      - ./logs:/logs
+
+  postgres:
+    image: postgres:16
+    depends_on:
+      logs-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DB: target_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: demo-superuser-local-only  # local fixture only; never reuse
+      DEMO_ORDERS_ROWS: ${DEMO_ORDERS_ROWS:-2000000}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      # File logging in the format the Database MCP log parser expects (see README "Log format")
+      - -c
+      - logging_collector=on
+      - -c
+      - log_directory=/var/log/postgresql
+      - -c
+      - log_filename=postgresql-%Y-%m-%d.log
+      - -c
+      - log_file_mode=0644
+      - -c
+      - log_rotation_age=1d
+      - -c
+      - log_timezone=UTC
+      - -c
+      - "log_line_prefix=%m [%p] %u@%d app=%a "
+      - -c
+      - log_min_duration_statement=250
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_connections=off
+      - -c
+      - log_min_error_statement=error
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - ./logs/postgres:/var/log/postgresql
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Ready only once the seed has finished (initdb runs before the server accepts TCP connections)
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d target_db && psql -h 127.0.0.1 -U postgres -d target_db -tAc 'SELECT 1 FROM demo_seed_done' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  demo-api:
+    build: ./api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DEMO_DB_DSN: postgresql://demo_app:demo-app-local-only@postgres:5432/target_db
+      DEMO_LOG_FILE: /var/log/demo-api/app.log
+    ports:
+      - "127.0.0.1:58080:8080"
+    volumes:
+      - ./logs/app:/var/log/demo-api
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:

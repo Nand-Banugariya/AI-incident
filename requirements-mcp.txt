@@ -1,0 +1,6 @@
+# Runtime dependencies of the MCP servers (mcp_common/, mcp_servers/). They run as separate processes and
+# must not need the platform's stack (FastAPI, SQLAlchemy, Celery). Later steps add: kubernetes, asyncpg, hvac.
+mcp>=2.2,<3
+anyio>=4.5
+pydantic>=2.7.0
+uvicorn[standard]>=0.30.0

@@ -1,0 +1,51 @@
+{
+  "id": "fault1_missing_index",
+  "title": "Order search times out under load",
+  "symptom": "GET /orders/search returns 503 'search timed out' for many requests during the load window",
+  "root_cause": {
+    "category": "database_performance",
+    "summary": "orders.customer_email has no index, so every search is a sequential scan of the whole orders table; under concurrent load the scans exceed the demo_app role's 300ms statement_timeout and Postgres cancels them.",
+    "file": "api/demo_api/orders.py",
+    "method": "search_orders_by_email",
+    "table": "orders",
+    "column": "customer_email"
+  },
+  "expected_evidence": [
+    {
+      "source": "application_logs",
+      "evidence_type": "stack_trace",
+      "must_contain": ["Order search timed out", "QueryCanceled", "canceling statement due to statement timeout"]
+    },
+    {
+      "source": "application_logs",
+      "evidence_type": "application_log",
+      "must_contain": ["GET /orders/search -> 503"]
+    },
+    {
+      "source": "database_logs",
+      "evidence_type": "database_log",
+      "must_contain": ["canceling statement due to statement timeout", "WHERE customer_email ="]
+    },
+    {
+      "source": "database_schema",
+      "evidence_type": "query",
+      "must_show": "no index on orders(customer_email); only pk and ix_orders_customer_id"
+    },
+    {
+      "source": "source_code",
+      "evidence_type": "source_code",
+      "must_contain": ["def search_orders_by_email", "WHERE customer_email = %s"]
+    }
+  ],
+  "correlation": "API log [req=<id>] matches the Postgres log 'app=demo-api:<id>' prefix for the same request",
+  "acceptable_fixes": [
+    "CREATE INDEX CONCURRENTLY ix_orders_customer_email ON orders (customer_email)",
+    "CREATE INDEX CONCURRENTLY ON orders (customer_email, created_at DESC)",
+    "Search via customers.email (unique index) joined to orders.customer_id (indexed)"
+  ],
+  "wrong_conclusions": [
+    "Raise statement_timeout (hides the problem; scans still saturate the database)",
+    "Application bug in the search handler",
+    "Database is down or unreachable"
+  ]
+}

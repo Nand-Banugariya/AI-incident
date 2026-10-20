@@ -1,0 +1,41 @@
+{
+  "id": "fault2_missing_config",
+  "title": "Every refund request fails with 500",
+  "symptom": "POST /refunds/{order_id} returns 500 'internal error' for every request",
+  "root_cause": {
+    "category": "missing_configuration",
+    "summary": "The app_settings table has no 'refund_policy' row. load_refund_policy() returns None, create_refund() passes it on unchecked, and calculate_refund_deadline() indexes it, raising TypeError: 'NoneType' object is not subscriptable.",
+    "file": "api/demo_api/refunds.py",
+    "method": "create_refund",
+    "crash_site": {"file": "api/demo_api/refunds.py", "method": "calculate_refund_deadline"},
+    "table": "app_settings",
+    "missing_row": {"key": "refund_policy"}
+  },
+  "expected_evidence": [
+    {
+      "source": "application_logs",
+      "evidence_type": "stack_trace",
+      "must_contain": [
+        "Unhandled error on POST /refunds/",
+        "calculate_refund_deadline",
+        "TypeError: 'NoneType' object is not subscriptable"
+      ],
+      "grouping": "the traceback lines must be ONE evidence entry with the timestamped line that starts it"
+    },
+    {
+      "source": "source_code",
+      "evidence_type": "source_code",
+      "must_contain": ["def load_refund_policy", "return row[0] if row else None", "policy[\"window_days\"]"]
+    }
+  ],
+  "not_expected": "No database errors: the SELECT on app_settings succeeds and simply returns no row",
+  "acceptable_fixes": [
+    "Insert the missing 'refund_policy' row (e.g. {\"window_days\": 30})",
+    "Make create_refund() fail with a clear 4xx/5xx error, or use a default, when the policy is missing"
+  ],
+  "wrong_conclusions": [
+    "Database outage",
+    "Bug in calculate_refund_deadline arithmetic",
+    "Missing order rows"
+  ]
+}
